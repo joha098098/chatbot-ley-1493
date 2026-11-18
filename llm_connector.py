@@ -4,16 +4,28 @@ from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 
 def get_open_llm(llm_config: dict = None):
     llm_config = llm_config or {}
-    model_id = os.getenv("LLM_MODEL_ID", llm_config.get("model_id", "meta-llama/Llama-3.1-8B-Instruct"))
-    mode = os.getenv("LLM_MODE", llm_config.get("mode", "api")).lower()
+    model_id = os.getenv("LLM_MODEL_ID", llm_config.get("model_id", "llama-3.1-8b-instant"))
+    mode = os.getenv("LLM_MODE", llm_config.get("mode", "groq")).lower()
     temperature = float(llm_config.get("temperature", 0.1))
     max_new_tokens = int(llm_config.get("max_new_tokens", 512))
     repetition_penalty = float(llm_config.get("repetition_penalty", 1.1))
     hf_token = os.getenv("HF_TOKEN")
 
-    if mode == "api":
+    if mode == "groq":
+        from langchain_groq import ChatGroq
+        groq_key = os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            raise ValueError("Falta GROQ_API_KEY en Secrets de Streamlit.")
+        return ChatGroq(
+            model=model_id,
+            temperature=temperature,
+            max_tokens=max_new_tokens,
+            api_key=groq_key
+        )
+
+    elif mode == "api":
         if not hf_token:
-            raise ValueError("Falta la variable de entorno HF_TOKEN. Configúrala en Secrets de Streamlit.")
+            raise ValueError("Falta HF_TOKEN en Secrets de Streamlit.")
         endpoint = HuggingFaceEndpoint(
             repo_id=model_id,
             task="text-generation",
@@ -30,7 +42,7 @@ def get_open_llm(llm_config: dict = None):
         from langchain_huggingface import HuggingFacePipeline
 
         if not torch.cuda.is_available():
-            raise RuntimeError("No se detectó GPU. Configura LLM_MODE = 'api' en Secrets de Streamlit.")
+            raise RuntimeError("No se detectó GPU. Usa LLM_MODE = 'groq' en Secrets.")
 
         gc.collect()
         torch.cuda.empty_cache()
@@ -63,4 +75,4 @@ def get_open_llm(llm_config: dict = None):
         return ChatHuggingFace(llm=HuggingFacePipeline(pipeline=pipe))
 
     else:
-        raise ValueError(f"Modo no soportado: {mode}. Usa 'local' o 'api'.")
+        raise ValueError(f"Modo no soportado: {mode}.")
