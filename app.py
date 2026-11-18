@@ -6,28 +6,33 @@ import streamlit as st
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
+from config_loader import load_config
 from llm_connector import get_open_llm
 from memory_manager import BoundedConversationMemory
 from rag_chain import Ley1493RAGPipeline
 from logger_manager import AnonymizedConversationLogger
 
-# 1. CONFIGURACIÓN DE PÁGINA Y ACCESIBILIDAD
+# Sincronizar secretos de Streamlit Cloud con variables de entorno (si existen)
+for secret_key in ["HF_TOKEN", "LLM_MODE", "LLM_MODEL_ID"]:
+    if secret_key in st.secrets and not os.getenv(secret_key):
+        os.environ[secret_key] = str(st.secrets[secret_key])
+
+# Cargar configuración centralizada
+cfg = load_config("config.yaml")
+
 st.set_page_config(
-    page_title="Asistente Normativo Ley 1493 de 2011 | Artes Escénicas",
-    page_icon="🎭",
-    layout="wide",
+    page_title=cfg["app"]["title"],
+    page_icon=cfg["app"]["page_icon"],
+    layout=cfg["app"]["layout"],
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS personalizados para mejorar contraste, legibilidad y distinción de roles
 st.markdown("""
 <style>
-    /* Mejorar tamaño base de fuente y espaciado entre líneas para lectura cómoda */
     .stMarkdown p, .stMarkdown li {
         font-size: 1.02rem !important;
         line-height: 1.6 !important;
     }
-    /* Etiquetas de encabezado de turno accesibles */
     .role-badge-user {
         display: inline-block;
         background-color: #1E3A8A;
@@ -56,25 +61,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. CARGA EN CACHÉ DE MOTORES RAG Y LLM
 @st.cache_resource(show_spinner="Cargando base documental (Ley 1493 de 2011 y PULEP)...")
 def init_vector_store():
-    embeddings_cpu = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-m3",
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True}
+    emb_cfg = cfg["embeddings"]
+    kb_cfg = cfg["knowledge_base"]
+    embeddings = HuggingFaceEmbeddings(
+        model_name=emb_cfg["model_id"],
+        model_kwargs={"device": emb_cfg["device"]},
+        encode_kwargs={"normalize_embeddings": emb_cfg["normalize_embeddings"]}
     )
     return FAISS.load_local(
-        "./faiss_index_ley1493",
-        embeddings_cpu,
+        kb_cfg["vector_store_path"],
+        embeddings,
         allow_dangerous_deserialization=True
     )
 
-@st.cache_resource(show_spinner="Iniciando modelo de lenguaje abierto en GPU...")
+@st.cache_resource(show_spinner="Inicializando modelo de lenguaje abierto...")
 def init_llm():
-    os.environ["LLM_MODE"] = "local"
-    os.environ["LLM_MODEL_ID"] = "Qwen/Qwen2.5-7B-Instruct"
-    return get_open_llm()
+    return get_open_llm(llm_config=cfg["llm"])
 
 def update_feedback_in_log(log_path: str, event_id: str, feedback_value: str):
     if not os.path.exists(log_path):
@@ -89,19 +93,21 @@ def update_feedback_in_log(log_path: str, event_id: str, feedback_value: str):
     with open(log_path, "w", encoding="utf-8") as f:
         f.write("\n".join(updated_lines) + "\n")
 
-# 3. GESTIÓN DE ESTADO MULTITURNO
-logger = AnonymizedConversationLogger(log_path="./logs/conversations_ley1493.jsonl")
+log_path = cfg["security_and_logging"]["log_file_path"]
+logger = AnonymizedConversationLogger(log_path=log_path)
 
 if "session_hash" not in st.session_state:
     st.session_state.session_hash = logger.generate_anonymous_session_id(str(uuid.uuid4()))
 
 if "memory" not in st.session_state:
-    st.session_state.memory = BoundedConversationMemory(max_turns=4, max_chars=3000)
+    st.session_state.memory = BoundedConversationMemory(
+        max_turns=cfg["memory"]["max_turns"],
+        max_chars=cfg["memory"]["max_chars"]
+    )
 
 if "ui_messages" not in st.session_state:
     st.session_state.ui_messages = []
 
-# 4. BARRA LATERAL ACCESIBLE (Controles de Sesión, Guía y Privacidad)
 with st.sidebar:
     st.title("🎭 Guía Ley 1493")
     st.markdown("Asistente virtual para productores y gestores de espectáculos públicos de las artes escénicas en Colombia.")
@@ -112,7 +118,7 @@ with st.sidebar:
     st.markdown(f"- **Turnos recordados:** {stats['active_turns']} de {stats['max_turns']}")
     st.markdown(f"- **Contexto activo:** ~{stats['approx_tokens']} tokens")
     
-    if st.button("🔄 Iniciar nueva conversación", use_container_width=True, help="Borra el historial actual y reinicia el contexto"):
+    if st.button("🔄 Iniciar nueva conversación", use_container_width=True):
         st.session_state.memory.clear()
         st.session_state.ui_messages = []
         st.session_state.session_hash = logger.generate_anonymous_session_id(str(uuid.uuid4()))
@@ -136,13 +142,17 @@ with st.sidebar:
         "se eliminan automáticamente de los registros."
     )
 
-# 5. ENCABEZADO PRINCIPAL Y PREGUNTAS SUGERIDAS (ONBOARDING)
 st.title("Consulta Normativa: Artes Escénicas (Ley 1493 de 2011)")
 st.caption("Resuelve dudas sobre contribución parafiscal cultural, registro en el PULEP, permisos y exclusiones de ley.")
 
 vector_db = init_vector_store()
 llm = init_llm()
-rag_pipeline = Ley1493RAGPipeline(vector_store=vector_db, llm=llm, top_k=4, score_threshold=1.15)
+rag_pipeline = Ley1493RAGPipeline(
+    vector_store=vector_db,
+    llm=llm,
+    top_k=cfg["retrieval"]["top_k"],
+    score_threshold=cfg["retrieval"]["score_threshold"]
+)
 
 if not st.session_state.ui_messages:
     st.markdown("### 👋 ¿Por dónde quieres empezar?")
@@ -159,13 +169,11 @@ if not st.session_state.ui_messages:
             st.rerun()
     st.divider()
 
-# 6. RENDERIZADO DE HISTORIAL MULTITURNO (Distinción clara Usuario vs. Chatbot)
 for idx, msg in enumerate(st.session_state.ui_messages):
     is_user = msg["role"] == "user"
     avatar_icon = "🧑‍💼" if is_user else "🎭"
     
     with st.chat_message(msg["role"], avatar=avatar_icon):
-        # Etiqueta explícita de rol + hora para accesibilidad visual y lectores de pantalla
         if is_user:
             st.markdown(
                 f'<span class="role-badge-user">Productor / Usuario</span>'
@@ -181,7 +189,6 @@ for idx, msg in enumerate(st.session_state.ui_messages):
             
         st.markdown(msg["content"])
 
-        # Detalles adicionales solo para turnos del asistente
         if not is_user:
             if msg.get("sources"):
                 with st.expander("📚 Consultar artículos y fuentes citadas"):
@@ -189,15 +196,14 @@ for idx, msg in enumerate(st.session_state.ui_messages):
             
             event_id = msg.get("event_id")
             if event_id:
-                col_fb1, col_fb2, _ = st.columns([1, 1, 10])
+                col_fb1, col_fb2, _ = st.columns([1, 1, 6])
                 if col_fb1.button("👍 Útil", key=f"up_{event_id}_{idx}"):
-                    update_feedback_in_log("./logs/conversations_ley1493.jsonl", event_id, "positive")
+                    update_feedback_in_log(log_path, event_id, "positive")
                     st.toast("Valoración positiva guardada.")
                 if col_fb2.button("👎 Mejorar", key=f"down_{event_id}_{idx}"):
-                    update_feedback_in_log("./logs/conversations_ley1493.jsonl", event_id, "negative")
+                    update_feedback_in_log(log_path, event_id, "negative")
                     st.toast("Gracias, revisaremos este caso.")
 
-# 7. ENTRADA DE NUEVO MENSAJE Y RESPUESTA EN VIVO
 user_input = st.chat_input("Escribe tu consulta aquí (ej. ¿Qué pasa si mis boletas valen menos de 3 UVT?)...")
 if "pending_prompt" in st.session_state:
     user_input = st.session_state.pop("pending_prompt")
@@ -205,7 +211,6 @@ if "pending_prompt" in st.session_state:
 if user_input:
     current_time = datetime.now().strftime("%H:%M")
     
-    # Mostrar y guardar turno del usuario
     with st.chat_message("user", avatar="🧑‍💼"):
         st.markdown(
             f'<span class="role-badge-user">Productor / Usuario</span>'
@@ -220,7 +225,6 @@ if user_input:
         "time": current_time
     })
 
-    # Generar y mostrar turno del chatbot
     with st.chat_message("assistant", avatar="🎭"):
         bot_time = datetime.now().strftime("%H:%M")
         st.markdown(
@@ -237,7 +241,6 @@ if user_input:
                 with st.expander("📚 Consultar artículos y fuentes citadas"):
                     st.markdown(result["formatted_context"])
 
-    # Registrar interacción en el logger anonimizado
     event_id = logger.log_turn(
         session_id=st.session_state.session_hash,
         user_query=user_input,
@@ -252,3 +255,6 @@ if user_input:
         "content": answer_text,
         "time": bot_time,
         "sources": result["formatted_context"] if result["sources"] else None,
+        "event_id": event_id
+    })
+    st.rerun()
