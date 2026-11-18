@@ -65,16 +65,31 @@ st.markdown("""
 def init_vector_store():
     emb_cfg = cfg["embeddings"]
     kb_cfg = cfg["knowledge_base"]
+    index_path = kb_cfg["vector_store_path"]
+
     embeddings = HuggingFaceEmbeddings(
         model_name=emb_cfg["model_id"],
         model_kwargs={"device": emb_cfg["device"]},
         encode_kwargs={"normalize_embeddings": emb_cfg["normalize_embeddings"]}
     )
-    return FAISS.load_local(
-        kb_cfg["vector_store_path"],
-        embeddings,
-        allow_dangerous_deserialization=True
-    )
+
+    if os.path.exists(os.path.join(index_path, "index.faiss")):
+        return FAISS.load_local(
+            index_path,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+    else:
+        from knowledge_base import load_and_clean_pdfs, segment_documents
+        raw_docs = load_and_clean_pdfs(docs_folder=kb_cfg["docs_folder"])
+        chunks = segment_documents(
+            raw_docs,
+            chunk_size=kb_cfg["chunk_size"],
+            chunk_overlap=kb_cfg["chunk_overlap"]
+        )
+        vector_store = FAISS.from_documents(chunks, embeddings)
+        vector_store.save_local(index_path)
+        return vector_store
 
 @st.cache_resource(show_spinner="Inicializando modelo de lenguaje abierto...")
 def init_llm():
@@ -108,6 +123,7 @@ if "memory" not in st.session_state:
 if "ui_messages" not in st.session_state:
     st.session_state.ui_messages = []
 
+# --- BARRA LATERAL CON GUÍA DE USO Y AVISO DE LIMITACIONES ---
 with st.sidebar:
     st.title("🎭 Guía Ley 1493")
     st.markdown("Asistente virtual para productores y gestores de espectáculos públicos de las artes escénicas en Colombia.")
@@ -125,25 +141,38 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    with st.expander("ℹ️ Cómo hacer mejores preguntas"):
+    with st.expander("📌 Capacidades y Limitaciones", expanded=True):
         st.markdown(
-            "1. Indica si eres **persona natural o jurídica**.\n"
-            "2. Menciona el **valor de las boletas** (en pesos o UVT).\n"
-            "3. Especifica el **tipo de espectáculo** (teatro, danza, música en vivo, circo)."
+            "**✅ Qué puede hacer:**\n"
+            "- Explicar requisitos de inscripción y registro en el **PULEP**.\n"
+            "- Orientar sobre el cálculo y umbral (3 UVT) de la **Contribución Parafiscal Cultural (10 %)**.\n"
+            "- Aclarar qué eventos están cubiertos o excluidos por la **Ley 1493 de 2011**.\n\n"
+            "**⛔ Limitaciones:**\n"
+            "- No cubre eventos deportivos, cine, ni fiestas privadas cerradas.\n"
+            "- No realiza trámites ni revisa documentos personales."
         )
 
     with st.expander("📊 Métricas de Uso (Anonimizadas)"):
         st.json(logger.generate_analytics_summary())
 
     st.divider()
-    st.info(
-        "**Privacidad y Alcance:** Este sistema ofrece orientación informativa basada en la Ley 1493 de 2011 "
-        "y documentos del PULEP. No reemplaza asesoría legal oficial. Los datos personales (NIT, correos o teléfonos) "
-        "se eliminan automáticamente de los registros."
+    st.warning(
+        "**⚠️ Aviso sobre posibles errores y alcance legal:** Este chatbot utiliza Inteligencia Artificial "
+        "y puede cometer errores, omisiones o imprecisiones (*alucinaciones*). La información entregada es "
+        "estrictamente orientativa y **no constituye asesoría jurídica ni tributaria vinculante**. "
+        "Verifica siempre las fuentes citadas o consulta directamente con el Ministerio de las Culturas y la DIAN."
     )
 
+# --- ENCABEZADO Y GUÍA INICIAL EN PANTALLA PRINCIPAL ---
 st.title("Consulta Normativa: Artes Escénicas (Ley 1493 de 2011)")
-st.caption("Resuelve dudas sobre contribución parafiscal cultural, registro en el PULEP, permisos y exclusiones de ley.")
+st.caption("Orientación basada en la Ley 1493 de 2011, decretos reglamentarios e instructivos oficiales del PULEP.")
+
+# Aviso permanente visible sobre posibles errores / alucinaciones
+st.info(
+    "ℹ️ **Nota importante:** Este asistente de IA responde con base en documentos normativos cargados, "
+    "pero puede presentar imprecisiones o interpretaciones incompletas. Verifica siempre el artículo citado "
+    "en la sección desplegable de cada respuesta. No ingreses datos personales (cédula, NIT o contraseñas)."
+)
 
 vector_db = init_vector_store()
 llm = init_llm()
@@ -154,14 +183,30 @@ rag_pipeline = Ley1493RAGPipeline(
     score_threshold=cfg["retrieval"]["score_threshold"]
 )
 
+# Panel de bienvenida: Capacidades, Limitaciones y Prompts Recomendados
 if not st.session_state.ui_messages:
-    st.markdown("### 👋 ¿Por dónde quieres empezar?")
-    st.markdown("Selecciona una consulta frecuente o escribe tu propia pregunta en el cuadro inferior:")
+    col_cap, col_lim = st.columns(2)
+    with col_cap:
+        st.success(
+            "**✅ Capacidades del Asistente**\n"
+            "- Guía paso a paso para registro de productores y eventos en **PULEP**.\n"
+            "- Cálculo y reglas de la **Contribución Parafiscal del 10 %** (boletas ≥ 3 UVT).\n"
+            "- Citas exactas del documento y página consultada."
+        )
+    with col_lim:
+        st.error(
+            "**⛔ Limitaciones del Sistema**\n"
+            "- No abarca cine, deportes, reinados ni eventos corporativos privados.\n"
+            "- Si una consulta excede los PDF cargados, derivará a canales oficiales.\n"
+            "- Puede generar errores de interpretación propios de modelos de lenguaje."
+        )
+
+    st.markdown("### 💡 Prompts recomendados (haz clic para probar)")
     cols = st.columns(3)
     ejemplos = [
-        "¿Cuándo debo pagar el 10% de contribución parafiscal cultural?",
-        "¿Qué requisitos pide el PULEP para registrar un espectáculo?",
-        "¿Un evento corporativo privado se rige por la Ley 1493?"
+        "Soy productor ocasional persona natural y mis boletas cuestan 4 UVT. ¿Debo pagar el 10% parafiscal?",
+        "¿Qué documentos y plazos exige el PULEP para registrar una temporada de teatro?",
+        "¿Una fiesta privada empresarial con música en vivo se rige por la Ley 1493 de 2011?"
     ]
     for idx, ej in enumerate(ejemplos):
         if cols[idx].button(ej, use_container_width=True):
@@ -169,6 +214,7 @@ if not st.session_state.ui_messages:
             st.rerun()
     st.divider()
 
+# Renderizar historial multiturno
 for idx, msg in enumerate(st.session_state.ui_messages):
     is_user = msg["role"] == "user"
     avatar_icon = "🧑‍💼" if is_user else "🎭"
@@ -204,13 +250,14 @@ for idx, msg in enumerate(st.session_state.ui_messages):
                     update_feedback_in_log(log_path, event_id, "negative")
                     st.toast("Gracias, revisaremos este caso.")
 
-user_input = st.chat_input("Escribe tu consulta aquí (ej. ¿Qué pasa si mis boletas valen menos de 3 UVT?)...")
+# Entrada de chat
+user_input = st.chat_input("Escribe tu consulta (ej. Indica tipo de productor, espectáculo y valor en UVT)...")
 if "pending_prompt" in st.session_state:
     user_input = st.session_state.pop("pending_prompt")
 
 if user_input:
     current_time = datetime.now().strftime("%H:%M")
-    
+
     with st.chat_message("user", avatar="🧑‍💼"):
         st.markdown(
             f'<span class="role-badge-user">Productor / Usuario</span>'
@@ -218,7 +265,7 @@ if user_input:
             unsafe_allow_html=True
         )
         st.markdown(user_input)
-        
+
     st.session_state.ui_messages.append({
         "role": "user",
         "content": user_input,
@@ -235,7 +282,7 @@ if user_input:
         with st.spinner("Consultando la Ley 1493 de 2011 y sus decretos..."):
             result = rag_pipeline.generate_answer(user_input, st.session_state.memory)
             answer_text = result["answer"]
-            
+
             st.markdown(answer_text)
             if result["sources"]:
                 with st.expander("📚 Consultar artículos y fuentes citadas"):
