@@ -1,57 +1,7 @@
-# ==============================================================================
-# CONFIGURACIÓN CENTRALIZADA - ASISTENTE NORMATIVO LEY 1493 DE 2011 (COLOMBIA)
-# ==============================================================================
-
-app:
-  title: "Asistente Normativo Ley 1493 de 2011 | Artes Escénicas"
-  page_icon: "🎭"
-  layout: "wide"
-
 llm:
-  # Modo de ejecución: 'local' (GPU T4 en Colab con 4-bit) o 'api' (Hugging Face Endpoint)
-  mode: "local"
-  # Modelo abierto principal (Licencia Apache 2.0)
-  model_id: "Qwen/Qwen2.5-7B-Instruct"
-  # Temperatura baja (0.0 - 0.2) para minimizar alucinaciones en respuestas legales
+  mode: "groq"
+  model_id: "openai/gpt-oss-20b"
   temperature: 0.1
-  # Límite máximo de tokens generados por respuesta
   max_new_tokens: 512
-  # Penalización ligera para evitar repeticiones en listas de requisitos
   repetition_penalty: 1.1
-  # Cuantización 4-bit (NF4) para ajustar el modelo de 7B en la GPU T4 gratuita (16 GB VRAM)
-  use_4bit_quantization: true
-
-embeddings:
-  # Modelo abierto multilingüe (Licencia MIT)
-  model_id: "BAAI/bge-m3"
-  # Ejecutar en 'cpu' preserva el 100% de la VRAM de la GPU para el LLM
-  device: "cpu"
-  # Normalizar vectores L2 para medición exacta de similitud
-  normalize_embeddings: true
-
-knowledge_base:
-  # Carpeta con los PDF públicos (Ley 1493 de 2011, Decreto 1080, instructivos PULEP)
-  docs_folder: "./docs_ley1493"
-  # Ruta donde se persiste el índice vectorial FAISS
-  vector_store_path: "./faiss_index_ley1493"
-  # Tamaño de cada fragmento (en caracteres) y solapamiento entre cortes
-  chunk_size: 900
-  chunk_overlap: 150
-
-retrieval:
-  # Número máximo de fragmentos normativos a recuperar por consulta (Top-K)
-  top_k: 4
-  # Umbral de distancia L2 máxima permitida (si se supera, se descarta por baja relevancia)
-  score_threshold: 1.15
-
-memory:
-  # Ventana deslizante: número de pares pregunta-respuesta conservados en sesión
-  max_turns: 4
-  # Presupuesto máximo de caracteres acumulados en el historial (~750 tokens)
-  max_chars: 3000
-
-security_and_logging:
-  # Longitud máxima permitida para la consulta del usuario
-  max_input_length: 1000
-  # Ruta del registro estructurado y anonimizado en formato JSON Lines
-  log_file_path: "./logs/conversations_ley1493.jsonl"
+  use_4bit_quantization: false
