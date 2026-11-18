@@ -154,7 +154,26 @@ with st.sidebar:
 
     with st.expander("📊 Métricas de Uso (Anonimizadas)"):
         st.json(logger.generate_analytics_summary())
+        with st.expander("📊 Métricas de Uso (Anonimizadas)"):
+        st.json(logger.generate_analytics_summary())
 
+    # --- NUEVO BLOQUE: CANALES OFICIALES DE CONTACTO ---
+    with st.expander("📞 Canales Oficiales de Atención", expanded=True):
+        st.markdown(
+            "Si tu caso requiere un concepto oficial o soporte técnico en plataforma, "
+            "comunícate directamente con las entidades competentes:\n\n"
+            "* **Ministerio de las Culturas:** [mincultura.gov.co](https://mincultura.gov.co)\n"
+            "* **Portal PULEP:** [pulep.mincultura.gov.co](https://mincultura.gov.co)\n"
+            "* **Correo Atención al Ciudadano:** `servicioalciudadano@mincultura.gov.co`\n"
+            "* **Correo Soporte PULEP:** `usuariospulep@mincultura.gov.co`\n"
+            "* **Línea telefónica:** (601) 342 4100 ext. 4053"
+        )
+
+    st.divider()
+    st.warning(
+        "**⚠️ Aviso sobre posibles errores y alcance legal:** Este chatbot utiliza Inteligencia Artificial..."
+    )
+    #fin
     st.divider()
     st.warning(
         "**⚠️ Aviso sobre posibles errores y alcance legal:** Este chatbot utiliza Inteligencia Artificial "
