@@ -13,7 +13,7 @@ from rag_chain import Ley1493RAGPipeline
 from logger_manager import AnonymizedConversationLogger
 
 # Sincronizar secretos de Streamlit Cloud con variables de entorno (si existen)
-for secret_key in ["HF_TOKEN", "LLM_MODE", "LLM_MODEL_ID"]:
+for secret_key in ["HF_TOKEN", "GROQ_API_KEY", "LLM_MODE", "LLM_MODEL_ID"]:
     if secret_key in st.secrets and not os.getenv(secret_key):
         os.environ[secret_key] = str(st.secrets[secret_key])
 
