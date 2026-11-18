@@ -154,7 +154,7 @@ with st.sidebar:
 
     with st.expander("📊 Métricas de Uso (Anonimizadas)"):
         st.json(logger.generate_analytics_summary())
-        with st.expander("📊 Métricas de Uso (Anonimizadas)"):
+    with st.expander("📊 Métricas de Uso (Anonimizadas)"):
         st.json(logger.generate_analytics_summary())
 
     # --- NUEVO BLOQUE: CANALES OFICIALES DE CONTACTO ---
